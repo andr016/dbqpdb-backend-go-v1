@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"dbqpdb-backend-go-v1/config"
+	"dbqpdb-backend-go-v1/folder"
+	"dbqpdb-backend-go-v1/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,51 +25,10 @@ import (
 
 // Flags
 var setupFlag = flag.Bool("setup", false, "Set up the database with migrations")
+var db *gorm.DB
 
 // Config
 var c, err = config.LoadConfig("config/config.json")
-
-// Subject model
-type Subject struct {
-	ID           int           `json:"subject_id" gorm:"primaryKey;column:subject_id"`
-	Name         string        `json:"subject_name" gorm:"column:name"`
-	MBTI         string        `json:"mbti" gorm:"column:mbti"`
-	SubjectTypes []SubjectType `json:"subject_types" gorm:"foreignKey:SubjectID"`
-	ImageURL     string        `json:"image_url" gorm:"column:image_url"`
-}
-
-// Typology model
-type Typology struct {
-	TypologyID  int    `json:"typology_id" gorm:"primaryKey;column:typology_id"`
-	Name        string `json:"typology_name" gorm:"column:name"`
-	DisplayName string `json:"typology_display_name" gorm:"column:display_name"`
-}
-
-var db *gorm.DB
-
-// Type model
-type Type struct {
-	ID          int    `json:"type_id" gorm:"primaryKey;column:type_id;unique"`
-	TypologyID  int    `json:"typology_id" gorm:"primaryKey;column:typology_id"`
-	Name        string `json:"type_name" gorm:"column:name"`
-	DisplayName string `json:"type_display_name" gorm:"column:display_name"`
-	Description string `json:"type_description" gorm:"column:description"`
-}
-
-// Type For Subject model
-type TypeForSubject struct {
-	ID int `json:"type_id" gorm:"primaryKey;column:type_id"`
-}
-
-// SubjectType model (associative table)
-type SubjectType struct {
-	SubjectID  int      `gorm:"primaryKey;column:subject_id"`
-	TypologyID int      `gorm:"primaryKey;column:typology_id"`
-	TypeID     int      `gorm:"column:type_id"`
-	Subject    Subject  `gorm:"foreignKey:SubjectID"`
-	Typology   Typology `gorm:"foreignKey:TypologyID"`
-	Type       Type     `gorm:"foreignKey:TypeID"`
-}
 
 type SubjectResponse struct {
 	Subject   string `json:"subject"`
@@ -110,7 +71,12 @@ func initDB() {
 					//Logger:      logger.Default.LogMode(logger.Silent),
 					PrepareStmt: true,
 				})
-				err := db.AutoMigrate(&Subject{}, &Typology{}, &Type{}, &TypeForSubject{}, &SubjectType{})
+				err := db.AutoMigrate(
+					&models.Subject{},
+					&models.Typology{},
+					&models.Type{},
+					&models.TypeForSubject{},
+					&models.SubjectType{})
 				if err != nil {
 					log.Fatal(err.Error())
 				}
@@ -138,7 +104,7 @@ func getTypesByTypologyID(c *fiber.Ctx) error {
 	}
 
 	// Query the types associated with the given typology_id
-	var types []Type
+	var types []models.Type
 	if err := db.Where("typology_id = ?", parsedTypologyID).Find(&types).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Types not found for the given typology"})
 	}
@@ -148,7 +114,7 @@ func getTypesByTypologyID(c *fiber.Ctx) error {
 }
 
 func fetchGetSubjects(c *fiber.Ctx) error {
-	var subjects []Subject
+	var subjects []models.Subject
 	if err := db.Find(&subjects).Error; err != nil {
 		// If there's an error, return a 500 Internal Server Error response
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -160,7 +126,7 @@ func fetchGetSubjects(c *fiber.Ctx) error {
 	return c.JSON(subjects)
 }
 
-var types []Type
+var types []models.Type
 
 func fetchTypes() error {
 	// Fetch the types from the database
@@ -182,7 +148,7 @@ func getTypes(c *fiber.Ctx) error {
 	return c.JSON(types)
 }
 
-var typologies []Typology
+var typologies []models.Typology
 
 func fetchTypologies() error {
 	if err := db.Find(&typologies).Error; err != nil {
@@ -208,7 +174,7 @@ func getTypologies(c *fiber.Ctx) error {
 func getTypologyByID(c *fiber.Ctx) error {
 	typologyID := c.Params("id")
 
-	var types []Type
+	var types []models.Type
 	if err := db.Where("id = ?", typologyID).Find(&types).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Typology not found"})
 	}
@@ -218,7 +184,7 @@ func getTypologyByID(c *fiber.Ctx) error {
 func getSubjectByID(c *fiber.Ctx) error {
 	subjectID := c.Params("id")
 
-	var subject Subject
+	var subject models.Subject
 
 	// Eager loading related data: subject_types
 	if err := db.Preload("SubjectTypes").
@@ -273,7 +239,7 @@ func uploadImage(c *fiber.Ctx) error {
 	subjectID := c.Params("id")
 	// Here, you would update the database with the file path for the subject
 
-	var subject Subject
+	var subject models.Subject
 	if err := db.First(&subject, subjectID).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).SendString("Subject not found")
 	}
@@ -293,6 +259,15 @@ func uploadImage(c *fiber.Ctx) error {
 func main() {
 	flag.Parse()
 	c, err = config.LoadConfig("config/config.json")
+
+	// REFACTOR!!!!
+	folderPath := "uploads"
+
+	// Call the function to create the folder if it doesn't exist
+	err := folder.CreateFolderIfNotExist(folderPath)
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
 
 	const prefix = "/api"
 
@@ -336,7 +311,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		var requestData []Type
+		var requestData []models.Type
 
 		// Parse the request body into the requestData slice
 		if err := c.BodyParser(&requestData); err != nil {
@@ -354,7 +329,7 @@ func main() {
 				}
 			}
 			if !typeFound {
-				if err := db.Where("type_id = ? AND typology_id = ?", typeInGlobal.ID, typologyID).Delete(&Type{}).Error; err != nil {
+				if err := db.Where("type_id = ? AND typology_id = ?", typeInGlobal.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
 					log.Println("Error deleting type:", err)
 					return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
 				}
@@ -368,7 +343,7 @@ func main() {
 			if typeFromRequest.ID < 0 {
 				// Add new type (assign typologyID)
 				typeFromRequest.TypologyID = typologyID
-				if err := db.Save(&Type{
+				if err := db.Save(&models.Type{
 					TypologyID:  typeFromRequest.TypologyID,
 					Name:        typeFromRequest.Name,
 					DisplayName: typeFromRequest.DisplayName,
@@ -391,7 +366,7 @@ func main() {
 				// 	DisplayName: typeFromRequest.DisplayName,
 				// 	Description: typeFromRequest.Description,
 				// }).Error;
-				if err := db.Save(&Type{
+				if err := db.Save(&models.Type{
 					ID:          typeFromRequest.ID,
 					TypologyID:  typeFromRequest.TypologyID,
 					Name:        typeFromRequest.Name,
@@ -405,7 +380,7 @@ func main() {
 				// this probably isn't needed anymore
 				log.Println(typeFromRequest.ID)
 				// If type_id is in the global array but not in the request, delete it
-				if err := db.Where("type_id = ? AND typology_id = ?", typeFromRequest.ID, typologyID).Delete(&Type{}).Error; err != nil {
+				if err := db.Where("type_id = ? AND typology_id = ?", typeFromRequest.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
 					log.Println("Error deleting type:", err)
 					return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
 				}
@@ -442,7 +417,7 @@ func main() {
 
 			//db.Where("subject_id = ? AND typology_id = ?", data.SubjectID, typologyID).Delete(&SubjectType{})
 
-			subjectType := SubjectType{
+			subjectType := models.SubjectType{
 				SubjectID:  data.SubjectID,
 				TypologyID: typologyID,
 				TypeID:     value,
@@ -466,7 +441,7 @@ func main() {
 			return errors.New("id is empty")
 		}
 
-		var subject Subject
+		var subject models.Subject
 		if err := db.First(&subject, id).Error; err != nil {
 			return err
 		}
@@ -480,7 +455,7 @@ func main() {
 			return errors.New("id is empty")
 		}
 
-		var typology Typology
+		var typology models.Typology
 		if err := db.First(&typology, id).Error; err != nil {
 			return err
 		}
@@ -489,7 +464,7 @@ func main() {
 	})
 
 	app.Post(prefix+"/subject/add", func(c *fiber.Ctx) error {
-		subject := new(Subject)
+		subject := new(models.Subject)
 		if err := c.BodyParser(&subject); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"success": false,
@@ -501,7 +476,7 @@ func main() {
 	})
 
 	app.Post(prefix+"/typology/add", func(c *fiber.Ctx) error {
-		typology := new(Typology)
+		typology := new(models.Typology)
 		if err := c.BodyParser(&typology); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"success": false,
