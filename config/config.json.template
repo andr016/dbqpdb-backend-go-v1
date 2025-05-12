@@ -1,0 +1,11 @@
+{
+    "database": {
+        "host": "localhost",
+        "user": "postgres",
+        "password": "123",
+        "dbname": "dbqpdb",
+        "port": 5432,
+        "sslmode": "disable",
+        "timezone": "Europe/Moscow"
+    }
+}

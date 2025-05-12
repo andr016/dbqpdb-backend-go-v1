@@ -4,11 +4,13 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"dbqpdb-backend-go-v1/config"
 
@@ -18,6 +20,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 )
+
+// Flags
+var setupFlag = flag.Bool("setup", false, "Set up the database with migrations")
+
+// Config
+var c, err = config.LoadConfig("config/config.json")
 
 // Subject model
 type Subject struct {
@@ -39,7 +47,7 @@ var db *gorm.DB
 
 // Type model
 type Type struct {
-	ID          int    `json:"type_id" gorm:"primaryKey;column:type_id"`
+	ID          int    `json:"type_id" gorm:"primaryKey;column:type_id;unique"`
 	TypologyID  int    `json:"typology_id" gorm:"primaryKey;column:typology_id"`
 	Name        string `json:"type_name" gorm:"column:name"`
 	DisplayName string `json:"type_display_name" gorm:"column:display_name"`
@@ -67,15 +75,55 @@ type SubjectResponse struct {
 	Types     []int  `json:"types"`
 }
 
-func initDB(dsn string) {
+func initDB() {
 	var err error
+
+	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
+		c.DB.Host, c.DB.User, c.DB.Password, c.DB.DBName, c.DB.Port, c.DB.SSLMode, c.DB.TimeZone)
+
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		//Logger:      logger.Default.LogMode(logger.Silent),
 		PrepareStmt: true,
 	})
 
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v\n", err)
+		// Error handling informing user on what to do
+		reason := ""
+		switch {
+		case strings.Contains(err.Error(), "auth"):
+			reason = "wrong login information (password?)"
+		case strings.Contains(err.Error(), "SQLSTATE 3D000"):
+			if *setupFlag {
+				fmt.Printf("Database does not exist. Creating the database by name %s...\nNote: this uses exec, make sure there is no sql injection in dbname if that's appropriate", c.DB.DBName)
+				dsnnodb := fmt.Sprintf("host=%s user=%s password=%s port=%d sslmode=%s TimeZone=%s",
+					c.DB.Host, c.DB.User, c.DB.Password, c.DB.Port, c.DB.SSLMode, c.DB.TimeZone)
+				db, err = gorm.Open(postgres.Open(dsnnodb), &gorm.Config{
+					//Logger:      logger.Default.LogMode(logger.Silent),
+					PrepareStmt: true,
+				})
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				db.Exec(fmt.Sprintf("CREATE DATABASE %s", c.DB.DBName))
+				fmt.Println("Database created successfully!")
+				db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+					//Logger:      logger.Default.LogMode(logger.Silent),
+					PrepareStmt: true,
+				})
+				err := db.AutoMigrate(&Subject{}, &Typology{}, &Type{}, &TypeForSubject{}, &SubjectType{})
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+				return
+			}
+			reason = "database doesn't exist. To automatically setup database, run with --setup flag"
+		}
+
+		if reason != "" {
+			log.Fatalf("Failed to connect to database.\nProbably, %s.\n%v\n", reason, err)
+		} else {
+			log.Fatalf("Failed to connect to database.\n%v\n", err)
+		}
 	}
 }
 
@@ -243,16 +291,25 @@ func uploadImage(c *fiber.Ctx) error {
 }
 
 func main() {
+	flag.Parse()
+	c, err = config.LoadConfig("config/config.json")
+
 	const prefix = "/api"
 
-	cfg, err := config.LoadConfig("config/config.json")
 	if err != nil {
 		log.Fatal("Error loading config: ", err)
 	}
-
-	initDB(cfg.Database.DSN)
+	initDB()
 	fetchTypes()
 	fetchTypologies()
+
+	if *setupFlag {
+		if err != nil {
+			log.Fatalf("Failed to set up the database: %v", err)
+		}
+		fmt.Println("Database setup complete!")
+		return
+	}
 
 	app := fiber.New()
 	app.Static("/uploads", "./uploads")
