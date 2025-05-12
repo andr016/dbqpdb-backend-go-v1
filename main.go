@@ -76,7 +76,8 @@ func initDB() {
 					&models.Typology{},
 					&models.Type{},
 					&models.TypeForSubject{},
-					&models.SubjectType{})
+					&models.SubjectType{},
+					&models.User{})
 				if err != nil {
 					log.Fatal(err.Error())
 				}
@@ -435,7 +436,7 @@ func main() {
 		return nil
 	})
 
-	app.Post(prefix+"/subject/delete/:id", func(c *fiber.Ctx) error {
+	app.Post(prefix+"/delete/subject/:id", func(c *fiber.Ctx) error {
 		id := c.Params("id")
 		if id == "" {
 			return errors.New("id is empty")

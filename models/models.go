@@ -39,3 +39,9 @@ type SubjectType struct {
 	Typology   Typology `gorm:"foreignKey:TypologyID"`
 	Type       Type     `gorm:"foreignKey:TypeID"`
 }
+
+type User struct {
+	UserID   int    `gorm:"primaryKey;column:user_id"`
+	Username string `gorm:"column:username"`
+	PassHash string `gorm:"column:pass_hash"`
+}
