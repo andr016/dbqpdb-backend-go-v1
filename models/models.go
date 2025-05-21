@@ -45,3 +45,8 @@ type User struct {
 	Username string `gorm:"column:username"`
 	PassHash string `gorm:"column:pass_hash"`
 }
+
+type Group struct {
+	GroupID   int    `gorm:"primaryKey;column:group_id"`
+	Groupname string `gorm:"column:groupname"`
+}

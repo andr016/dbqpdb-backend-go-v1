@@ -25,6 +25,7 @@ import (
 
 // Flags
 var setupFlag = flag.Bool("setup", false, "Set up the database with migrations")
+
 var db *gorm.DB
 
 // Config
@@ -151,6 +152,8 @@ func getTypes(c *fiber.Ctx) error {
 
 var typologies []models.Typology
 
+var groups []models.Group
+
 func fetchTypologies() error {
 	if err := db.Find(&typologies).Error; err != nil {
 		return err
@@ -170,6 +173,23 @@ func getTypologies(c *fiber.Ctx) error {
 
 	// Return the typologies as a JSON response
 	return c.JSON(typologies)
+}
+
+func fetchGroups() error {
+	if err := db.Find(&groups).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func getGroups(c *fiber.Ctx) error {
+	if err := fetchGroups(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to fetch typologies",
+			"details": err.Error(),
+		})
+	}
+	return c.JSON(groups)
 }
 
 func getTypologyByID(c *fiber.Ctx) error {
@@ -257,6 +277,18 @@ func uploadImage(c *fiber.Ctx) error {
 	})
 }
 
+func groupAdd(c *fiber.Ctx) error {
+	group := new(models.Group)
+	if err := c.BodyParser(&group); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid request body",
+		})
+	}
+	db.Create(&group)
+	return nil
+}
+
 func main() {
 	flag.Parse()
 	c, err = config.LoadConfig("config/config.json")
@@ -299,6 +331,8 @@ func main() {
 		AllowHeaders: "Content-Type,Authorization",
 	}))
 
+	app.Get(prefix+"/group", getGroups)
+	app.Get(prefix+"/group/add", groupAdd)
 	app.Get(prefix+"/subject/:id", getSubjectByID)
 	app.Get(prefix+"/typology", getTypologies)
 	app.Get(prefix+"/typology/:typology_id", getTypesByTypologyID)
