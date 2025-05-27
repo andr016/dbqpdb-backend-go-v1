@@ -115,6 +115,20 @@ func getTypesByTypologyID(c *fiber.Ctx) error {
 	return c.JSON(types)
 }
 
+func fetchGetSubjectsByGroup(c *fiber.Ctx) error {
+	groupID := c.Params("id")
+	var subjects []models.Subject
+	if err := db.Where("group_id = ?", groupID).Find(&subjects).Error; err != nil {
+		// If there's an error, return a 500 Internal Server Error response
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to fetch types",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(subjects)
+}
+
 func fetchGetSubjects(c *fiber.Ctx) error {
 	var subjects []models.Subject
 	if err := db.Find(&subjects).Error; err != nil {
@@ -338,6 +352,7 @@ func main() {
 	app.Get(prefix+"/typology/:typology_id", getTypesByTypologyID)
 	app.Get(prefix+"/types", getTypes)
 	app.Get(prefix+"/subject/", fetchGetSubjects)
+	app.Get(prefix+"/subject/group/:id", fetchGetSubjectsByGroup)
 
 	app.Post(prefix+"/upload/subject/:id", uploadImage)
 

@@ -7,6 +7,7 @@ type Subject struct {
 	MBTI         string        `json:"mbti" gorm:"column:mbti"`
 	SubjectTypes []SubjectType `json:"subject_types" gorm:"foreignKey:SubjectID"`
 	ImageURL     string        `json:"image_url" gorm:"column:image_url"`
+	Group        Group         `json:"group_id" gorm:"foreignKey:GroupID"`
 }
 
 // Typology model
@@ -42,11 +43,11 @@ type SubjectType struct {
 
 type User struct {
 	UserID   int    `gorm:"primaryKey;column:user_id"`
-	Username string `gorm:"column:username"`
+	Username string `gorm:"column:user_name;unique"`
 	PassHash string `gorm:"column:pass_hash"`
 }
 
 type Group struct {
-	GroupID   int    `gorm:"primaryKey;column:group_id"`
-	Groupname string `gorm:"column:groupname"`
+	GroupID   int    `json:"group_id" gorm:"primaryKey;column:group_id"`
+	Groupname string `json:"group_name" gorm:"column:group_name;unique"`
 }
