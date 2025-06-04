@@ -28,6 +28,7 @@ import (
 
 // Flags
 var setupFlag = flag.Bool("setup", false, "Set up the database with migrations")
+var noauthFlag = flag.Bool("noauth", false, "Disable authentication")
 
 var db *gorm.DB
 
@@ -233,14 +234,10 @@ func getSubjectByID(c *fiber.Ctx) error {
 
 	// Prepare the response structure
 	subjectResponse := struct {
-		Subject   string `json:"subject"`
-		SubjectID int    `json:"subject_id"`
-		Types     []int  `json:"types"`
-		ImageURL  string `json:"image_url"`
+		Subject models.Subject `json:"subject"`
+		Types   []int          `json:"types"`
 	}{
-		Subject:   subject.Name,
-		SubjectID: subject.ID,
-		ImageURL:  subject.ImageURL,
+		Subject: subject,
 	}
 
 	// Extract typologies and types from the subject_types association
@@ -385,13 +382,17 @@ func main() {
 	// Unauthenticated route
 	app.Get("/", accessible)
 
-	// JWT Middleware
-	app.Use(jwtware.New(jwtware.Config{
-		SigningKey: jwtware.SigningKey{Key: []byte("secret")},
-	}))
+	if *noauthFlag {
+		fmt.Println("WARNING! Authentication disabled.")
+	} else {
+		// JWT Middleware
+		app.Use(jwtware.New(jwtware.Config{
+			SigningKey: jwtware.SigningKey{Key: []byte("secret")},
+		}))
 
-	// Restricted Routes
-	app.Get("/restricted", restricted)
+		// Restricted Routes
+		app.Get("/restricted", restricted)
+	}
 
 	app.Use(cors.New(cors.Config{
 		// Allow all origins to access the resources
