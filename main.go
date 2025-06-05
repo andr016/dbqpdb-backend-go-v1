@@ -303,6 +303,20 @@ func groupAdd(c *fiber.Ctx) error {
 	return nil
 }
 
+func groupDelete(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return errors.New("id is empty")
+	}
+
+	var group models.Group
+	if err := db.First(&group, id).Error; err != nil {
+		return err
+	}
+	db.Delete(&group)
+	return nil
+}
+
 func login(c *fiber.Ctx) error {
 	user := c.FormValue("user")
 	pass := c.FormValue("pass")
@@ -403,8 +417,10 @@ func main() {
 		AllowHeaders: "Content-Type,Authorization",
 	}))
 
-	app.Get(prefix+"/group", getGroups)
-	app.Get(prefix+"/group/add", groupAdd)
+	app.Get(prefix+"/groups", getGroups)
+	app.Post(prefix+"/groups", groupAdd)
+	app.Delete(prefix+"/groups/:id", groupDelete)
+
 	app.Get(prefix+"/subject/:id", getSubjectByID)
 	app.Get(prefix+"/typology", getTypologies)
 	app.Get(prefix+"/typology/:typology_id", getTypesByTypologyID)
@@ -413,6 +429,30 @@ func main() {
 	app.Get(prefix+"/subject/group/:id", fetchGetSubjectsByGroup)
 
 	app.Post(prefix+"/upload/subject/:id", uploadImage)
+	app.Put(prefix+"/subject/:id", func(c *fiber.Ctx) error {
+		id := c.Params("id")
+		if id == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "ID is required"})
+		}
+
+		// 2. Parse request body into a Subject struct
+		var updatedSubject models.Subject
+		if err := c.BodyParser(&updatedSubject); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		// 3. Update in database (example using GORM)
+		result := db.Model(&models.Subject{}).Where("subject_id = ?", id).Updates(updatedSubject)
+		if result.Error != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to update Subject"})
+		}
+
+		// 4. Return success
+		return c.JSON(fiber.Map{
+			"success": true,
+			"data":    updatedSubject,
+		})
+	})
 
 	app.Post(prefix+"/submit/typology/:id", func(c *fiber.Ctx) error {
 		typologyID, err := strconv.Atoi(c.Params("id"))
