@@ -396,6 +396,8 @@ func main() {
 	// Unauthenticated route
 	app.Get("/", accessible)
 
+	api := app.Group("/api")
+
 	if *noauthFlag {
 		fmt.Println("WARNING! Authentication disabled.")
 	} else {
@@ -417,9 +419,9 @@ func main() {
 		AllowHeaders: "Content-Type,Authorization",
 	}))
 
-	app.Get(prefix+"/groups", getGroups)
-	app.Post(prefix+"/groups", groupAdd)
-	app.Delete(prefix+"/groups/:id", groupDelete)
+	api.Get("/groups", getGroups)
+	api.Post("/groups", groupAdd)
+	api.Delete("/groups/:id", groupDelete)
 
 	app.Get(prefix+"/subject/:id", getSubjectByID)
 	app.Get(prefix+"/typology", getTypologies)
