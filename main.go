@@ -389,6 +389,15 @@ func main() {
 	app := fiber.New()
 	app.Static("/uploads", "./uploads")
 
+	app.Use(cors.New(cors.Config{
+		// Allow all origins to access the resources
+		AllowOrigins: "*",
+		// Allow specific methods
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		// Allow specific headers
+		AllowHeaders: "Content-Type,Authorization",
+	}))
+
 	// AUTH TEST
 	// Login route
 	app.Post("/login", login)
@@ -409,15 +418,6 @@ func main() {
 		// Restricted Routes
 		app.Get("/restricted", restricted)
 	}
-
-	app.Use(cors.New(cors.Config{
-		// Allow all origins to access the resources
-		AllowOrigins: "*",
-		// Allow specific methods
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-		// Allow specific headers
-		AllowHeaders: "Content-Type,Authorization",
-	}))
 
 	api.Get("/groups", getGroups)
 	api.Post("/groups", groupAdd)
