@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"dbqpdb-backend-go-v1/config"
@@ -30,22 +31,17 @@ import (
 var setupFlag = flag.Bool("setup", false, "Set up the database with migrations")
 var noauthFlag = flag.Bool("noauth", false, "Disable authentication")
 
+// DB GORM
 var db *gorm.DB
 
 // Config
-var c, err = config.LoadConfig("config/config.json")
-
-type SubjectResponse struct {
-	Subject   string `json:"subject"`
-	SubjectID int    `json:"subject_id"`
-	Types     []int  `json:"types"`
-}
+var conf, err = config.LoadConfig("config/config.json")
 
 func initDB() {
 	var err error
 
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
-		c.DB.Host, c.DB.User, c.DB.Password, c.DB.DBName, c.DB.Port, c.DB.SSLMode, c.DB.TimeZone)
+		conf.DB.Host, conf.DB.User, conf.DB.Password, conf.DB.DBName, conf.DB.Port, conf.DB.SSLMode, conf.DB.TimeZone)
 
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		//Logger:      logger.Default.LogMode(logger.Silent),
@@ -60,9 +56,9 @@ func initDB() {
 			reason = "wrong login information (password?)"
 		case strings.Contains(err.Error(), "SQLSTATE 3D000"):
 			if *setupFlag {
-				fmt.Printf("Database does not exist. Creating the database by name %s...\nNote: this uses exec, make sure there is no sql injection in dbname if that's appropriate", c.DB.DBName)
+				fmt.Printf("Database does not exist. Creating the database by name %s...\nNote: this uses exec, make sure there is no sql injection in dbname if that's appropriate", conf.DB.DBName)
 				dsnnodb := fmt.Sprintf("host=%s user=%s password=%s port=%d sslmode=%s TimeZone=%s",
-					c.DB.Host, c.DB.User, c.DB.Password, c.DB.Port, c.DB.SSLMode, c.DB.TimeZone)
+					conf.DB.Host, conf.DB.User, conf.DB.Password, conf.DB.Port, conf.DB.SSLMode, conf.DB.TimeZone)
 				db, err = gorm.Open(postgres.Open(dsnnodb), &gorm.Config{
 					//Logger:      logger.Default.LogMode(logger.Silent),
 					PrepareStmt: true,
@@ -70,7 +66,7 @@ func initDB() {
 				if err != nil {
 					log.Fatal(err.Error())
 				}
-				db.Exec(fmt.Sprintf("CREATE DATABASE %s", c.DB.DBName))
+				db.Exec(fmt.Sprintf("CREATE DATABASE %s", conf.DB.DBName))
 				fmt.Println("Database created successfully!")
 				db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 					//Logger:      logger.Default.LogMode(logger.Silent),
@@ -253,6 +249,26 @@ func enableCors(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 }
 
+func subjectsMostPopularFirstLetter() {
+	// fetching
+	var subjects []models.Subject
+	if err := db.Find(&subjects).Error; err != nil {
+		// If there's an error, return a 500 Internal Server Error response
+	}
+
+	var wg sync.WaitGroup
+
+	for _, subject := range subjects {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fmt.Println(subject.Name)
+		}()
+	}
+	wg.Wait()
+	log.Println("Goroutines finished")
+}
+
 func uploadImage(c *fiber.Ctx) error {
 	log.Println("fuck")
 	// Get the file from the form-data
@@ -358,7 +374,7 @@ func restricted(c *fiber.Ctx) error {
 
 func main() {
 	flag.Parse()
-	c, err = config.LoadConfig("config/config.json")
+	conf, err = config.LoadConfig("config/config.json")
 
 	// REFACTOR!!!!
 	folderPath := "uploads"
@@ -543,7 +559,7 @@ func main() {
 
 	app.Post("/api/submitsubject", func(c *fiber.Ctx) error {
 		// Create an instance of SubjectResponse
-		var data SubjectResponse
+		var data models.SubjectResponse
 		fmt.Println("reaction")
 
 		// Parse the incoming JSON request body into the SubjectResponse struct
@@ -636,6 +652,8 @@ func main() {
 		db.Create(&typology)
 		return nil
 	})
+
+	go subjectsMostPopularFirstLetter()
 
 	app.Listen(":8000")
 }
