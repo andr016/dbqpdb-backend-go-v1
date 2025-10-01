@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
+	"dbqpdb-backend-go-v1/auth"
 	"dbqpdb-backend-go-v1/config"
 	"dbqpdb-backend-go-v1/folder"
 	"dbqpdb-backend-go-v1/models"
@@ -24,7 +24,6 @@ import (
 	jwtware "github.com/gofiber/contrib/jwt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // Flags
@@ -96,6 +95,7 @@ func initDB() {
 }
 
 func getTypesByTypologyID(c *fiber.Ctx) error {
+
 	// Retrieve the typology_id from the URL parameter
 	typologyID := c.Params("typology_id")
 
@@ -333,43 +333,210 @@ func groupDelete(c *fiber.Ctx) error {
 	return nil
 }
 
-func login(c *fiber.Ctx) error {
-	user := c.FormValue("user")
-	pass := c.FormValue("pass")
-
-	// Throws Unauthorized error
-	if user != "john" || pass != "doe" {
-		return c.SendStatus(fiber.StatusUnauthorized)
+func updateSubject(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "ID is required"})
 	}
 
-	// Create the Claims
-	claims := jwt.MapClaims{
-		"name":  "John Doe",
-		"admin": true,
-		"exp":   time.Now().Add(time.Hour * 72).Unix(),
+	// 2. Parse request body into a Subject struct
+	var updatedSubject models.Subject
+	if err := c.BodyParser(&updatedSubject); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Create token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	// 3. Update in database (example using GORM)
+	result := db.Model(&models.Subject{}).Where("subject_id = ?", id).Updates(updatedSubject)
+	if result.Error != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to update Subject"})
+	}
 
-	// Generate encoded token and send it as response.
-	t, err := token.SignedString([]byte("secret"))
+	// 4. Return success
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    updatedSubject,
+	})
+}
+
+func submitTypology(c *fiber.Ctx) error {
+	typologyID, err := strconv.Atoi(c.Params("id"))
 	if err != nil {
-		return c.SendStatus(fiber.StatusInternalServerError)
+		return err
+	}
+	var requestData []models.Type
+
+	// Parse the request body into the requestData slice
+	if err := c.BodyParser(&requestData); err != nil {
+		return c.Status(fiber.StatusBadRequest).SendString("Failed to parse request data")
 	}
 
-	return c.JSON(fiber.Map{"token": t})
+	for _, typeInGlobal := range types {
+		var typeFound = false
+		for _, typeFromRequest := range requestData {
+			if typeInGlobal.ID == typeFromRequest.ID && typeInGlobal.TypologyID == typologyID {
+				typeFound = true
+				break
+			} else {
+
+			}
+		}
+		if !typeFound {
+			if err := db.Where("type_id = ? AND typology_id = ?", typeInGlobal.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
+				log.Println("Error deleting type:", err)
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
+			}
+		}
+
+	}
+
+	// Update, Delete or Add Types based on the logic
+	for _, typeFromRequest := range requestData {
+		// Check if the type_id is negative (add new type)
+		if typeFromRequest.ID < 0 {
+			// Add new type (assign typologyID)
+			typeFromRequest.TypologyID = typologyID
+			if err := db.Save(&models.Type{
+				TypologyID:  typeFromRequest.TypologyID,
+				Name:        typeFromRequest.Name,
+				DisplayName: typeFromRequest.DisplayName,
+				Description: typeFromRequest.Description,
+			}).Error; err != nil {
+				log.Println("Error adding new type:", err)
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to add new type")
+			}
+			continue
+		}
+
+		// Check if type_id exists in the existing types array
+		// var existingType Type
+		typeFound := true
+
+		if typeFound {
+			// Update the existing type if it's in both the global array and the request data
+			// if err := db.Model(&existingType).Updates(Type{
+			// 	Name:        typeFromRequest.Name,
+			// 	DisplayName: typeFromRequest.DisplayName,
+			// 	Description: typeFromRequest.Description,
+			// }).Error;
+			if err := db.Save(&models.Type{
+				ID:          typeFromRequest.ID,
+				TypologyID:  typeFromRequest.TypologyID,
+				Name:        typeFromRequest.Name,
+				DisplayName: typeFromRequest.DisplayName,
+				Description: typeFromRequest.Description,
+			}).Error; err != nil {
+				log.Println("Error savingtype:", err)
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to add new type")
+			}
+		} else {
+			// this probably isn't needed anymore
+			log.Println(typeFromRequest.ID)
+			// If type_id is in the global array but not in the request, delete it
+			if err := db.Where("type_id = ? AND typology_id = ?", typeFromRequest.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
+				log.Println("Error deleting type:", err)
+				return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
+			}
+		}
+	}
+
+	// Return a success response
+	return c.Status(fiber.StatusOK).SendString("Types processed successfully")
 }
 
-func accessible(c *fiber.Ctx) error {
-	return c.SendString("Accessible")
+func submitSubject(c *fiber.Ctx) error {
+	// Create an instance of SubjectResponse
+	var data models.SubjectResponse
+	fmt.Println("reaction")
+
+	// Parse the incoming JSON request body into the SubjectResponse struct
+	if err := c.BodyParser(&data); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid request body",
+		})
+	}
+
+	for _, value := range data.Types {
+		fmt.Println(value)
+		var typologyID int
+
+		for _, t := range types {
+			if t.ID == value {
+				typologyID = t.TypologyID
+				break
+			}
+		}
+
+		//db.Where("subject_id = ? AND typology_id = ?", data.SubjectID, typologyID).Delete(&SubjectType{})
+
+		subjectType := models.SubjectType{
+			SubjectID:  data.SubjectID,
+			TypologyID: typologyID,
+			TypeID:     value,
+		}
+
+		if err := db.Save(&subjectType).Error; err != nil {
+			log.Fatalf("Error creating or updating SubjectType: %v", err)
+		}
+
+		fmt.Println(typologyID)
+	}
+
+	fmt.Println(data.Subject)
+
+	return nil
 }
 
-func restricted(c *fiber.Ctx) error {
-	user := c.Locals("user").(*jwt.Token)
-	claims := user.Claims.(jwt.MapClaims)
-	name := claims["name"].(string)
-	return c.SendString("Welcome " + name)
+func deleteSubject(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return errors.New("id is empty")
+	}
+
+	var subject models.Subject
+	if err := db.First(&subject, id).Error; err != nil {
+		return err
+	}
+	db.Delete(&subject)
+	return nil
+}
+
+func createSubject(c *fiber.Ctx) error {
+	subject := new(models.Subject)
+	if err := c.BodyParser(&subject); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid request body",
+		})
+	}
+	db.Create(&subject)
+	return nil
+}
+
+func deleteTypology(c *fiber.Ctx) error {
+	id := c.Params("id")
+	if id == "" {
+		return errors.New("id is empty")
+	}
+
+	var typology models.Typology
+	if err := db.First(&typology, id).Error; err != nil {
+		return err
+	}
+	db.Delete(&typology)
+	return nil
+}
+
+func createTypology(c *fiber.Ctx) error {
+	typology := new(models.Typology)
+	if err := c.BodyParser(&typology); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"message": "Invalid request body",
+		})
+	}
+	db.Create(&typology)
+	return nil
 }
 
 func main() {
@@ -416,10 +583,10 @@ func main() {
 
 	// AUTH TEST
 	// Login route
-	app.Post("/login", login)
+	app.Post("/login", auth.Login)
 
 	// Unauthenticated route
-	app.Get("/", accessible)
+	app.Get("/", auth.Accessible)
 
 	api := app.Group("/api")
 
@@ -432,7 +599,7 @@ func main() {
 		}))
 
 		// Restricted Routes
-		app.Get("/restricted", restricted)
+		app.Get("/restricted", auth.Restricted)
 	}
 
 	api.Get("/groups", getGroups)
@@ -447,211 +614,14 @@ func main() {
 	app.Get(prefix+"/subject/group/:id", fetchGetSubjectsByGroup)
 
 	app.Post(prefix+"/upload/subject/:id", uploadImage)
-	app.Put(prefix+"/subject/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		if id == "" {
-			return c.Status(400).JSON(fiber.Map{"error": "ID is required"})
-		}
+	app.Put(prefix+"/subject/:id", updateSubject)
 
-		// 2. Parse request body into a Subject struct
-		var updatedSubject models.Subject
-		if err := c.BodyParser(&updatedSubject); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
-		}
-
-		// 3. Update in database (example using GORM)
-		result := db.Model(&models.Subject{}).Where("subject_id = ?", id).Updates(updatedSubject)
-		if result.Error != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "Failed to update Subject"})
-		}
-
-		// 4. Return success
-		return c.JSON(fiber.Map{
-			"success": true,
-			"data":    updatedSubject,
-		})
-	})
-
-	app.Post(prefix+"/submit/typology/:id", func(c *fiber.Ctx) error {
-		typologyID, err := strconv.Atoi(c.Params("id"))
-		if err != nil {
-			return err
-		}
-		var requestData []models.Type
-
-		// Parse the request body into the requestData slice
-		if err := c.BodyParser(&requestData); err != nil {
-			return c.Status(fiber.StatusBadRequest).SendString("Failed to parse request data")
-		}
-
-		for _, typeInGlobal := range types {
-			var typeFound = false
-			for _, typeFromRequest := range requestData {
-				if typeInGlobal.ID == typeFromRequest.ID && typeInGlobal.TypologyID == typologyID {
-					typeFound = true
-					break
-				} else {
-
-				}
-			}
-			if !typeFound {
-				if err := db.Where("type_id = ? AND typology_id = ?", typeInGlobal.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
-					log.Println("Error deleting type:", err)
-					return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
-				}
-			}
-
-		}
-
-		// Update, Delete or Add Types based on the logic
-		for _, typeFromRequest := range requestData {
-			// Check if the type_id is negative (add new type)
-			if typeFromRequest.ID < 0 {
-				// Add new type (assign typologyID)
-				typeFromRequest.TypologyID = typologyID
-				if err := db.Save(&models.Type{
-					TypologyID:  typeFromRequest.TypologyID,
-					Name:        typeFromRequest.Name,
-					DisplayName: typeFromRequest.DisplayName,
-					Description: typeFromRequest.Description,
-				}).Error; err != nil {
-					log.Println("Error adding new type:", err)
-					return c.Status(fiber.StatusInternalServerError).SendString("Failed to add new type")
-				}
-				continue
-			}
-
-			// Check if type_id exists in the existing types array
-			// var existingType Type
-			typeFound := true
-
-			if typeFound {
-				// Update the existing type if it's in both the global array and the request data
-				// if err := db.Model(&existingType).Updates(Type{
-				// 	Name:        typeFromRequest.Name,
-				// 	DisplayName: typeFromRequest.DisplayName,
-				// 	Description: typeFromRequest.Description,
-				// }).Error;
-				if err := db.Save(&models.Type{
-					ID:          typeFromRequest.ID,
-					TypologyID:  typeFromRequest.TypologyID,
-					Name:        typeFromRequest.Name,
-					DisplayName: typeFromRequest.DisplayName,
-					Description: typeFromRequest.Description,
-				}).Error; err != nil {
-					log.Println("Error savingtype:", err)
-					return c.Status(fiber.StatusInternalServerError).SendString("Failed to add new type")
-				}
-			} else {
-				// this probably isn't needed anymore
-				log.Println(typeFromRequest.ID)
-				// If type_id is in the global array but not in the request, delete it
-				if err := db.Where("type_id = ? AND typology_id = ?", typeFromRequest.ID, typologyID).Delete(&models.Type{}).Error; err != nil {
-					log.Println("Error deleting type:", err)
-					return c.Status(fiber.StatusInternalServerError).SendString("Failed to delete type")
-				}
-			}
-		}
-
-		// Return a success response
-		return c.Status(fiber.StatusOK).SendString("Types processed successfully")
-	})
-
-	app.Post("/api/submitsubject", func(c *fiber.Ctx) error {
-		// Create an instance of SubjectResponse
-		var data models.SubjectResponse
-		fmt.Println("reaction")
-
-		// Parse the incoming JSON request body into the SubjectResponse struct
-		if err := c.BodyParser(&data); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"success": false,
-				"message": "Invalid request body",
-			})
-		}
-
-		for _, value := range data.Types {
-			fmt.Println(value)
-			var typologyID int
-
-			for _, t := range types {
-				if t.ID == value {
-					typologyID = t.TypologyID
-					break
-				}
-			}
-
-			//db.Where("subject_id = ? AND typology_id = ?", data.SubjectID, typologyID).Delete(&SubjectType{})
-
-			subjectType := models.SubjectType{
-				SubjectID:  data.SubjectID,
-				TypologyID: typologyID,
-				TypeID:     value,
-			}
-
-			if err := db.Save(&subjectType).Error; err != nil {
-				log.Fatalf("Error creating or updating SubjectType: %v", err)
-			}
-
-			fmt.Println(typologyID)
-		}
-
-		fmt.Println(data.Subject)
-
-		return nil
-	})
-
-	app.Post(prefix+"/delete/subject/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		if id == "" {
-			return errors.New("id is empty")
-		}
-
-		var subject models.Subject
-		if err := db.First(&subject, id).Error; err != nil {
-			return err
-		}
-		db.Delete(&subject)
-		return nil
-	})
-
-	app.Post(prefix+"/delete/typology/:id", func(c *fiber.Ctx) error {
-		id := c.Params("id")
-		if id == "" {
-			return errors.New("id is empty")
-		}
-
-		var typology models.Typology
-		if err := db.First(&typology, id).Error; err != nil {
-			return err
-		}
-		db.Delete(&typology)
-		return nil
-	})
-
-	app.Post(prefix+"/subject/add", func(c *fiber.Ctx) error {
-		subject := new(models.Subject)
-		if err := c.BodyParser(&subject); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"success": false,
-				"message": "Invalid request body",
-			})
-		}
-		db.Create(&subject)
-		return nil
-	})
-
-	app.Post(prefix+"/typology/add", func(c *fiber.Ctx) error {
-		typology := new(models.Typology)
-		if err := c.BodyParser(&typology); err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"success": false,
-				"message": "Invalid request body",
-			})
-		}
-		db.Create(&typology)
-		return nil
-	})
+	app.Post(prefix+"/submit/typology/:id", submitTypology)
+	app.Post(prefix+"/submitsubject", submitSubject)
+	app.Post(prefix+"/delete/subject/:id", deleteSubject)
+	app.Post(prefix+"/delete/typology/:id", deleteTypology)
+	app.Post(prefix+"/subject/add", createSubject)
+	app.Post(prefix+"/typology/add", createTypology)
 
 	go subjectsMostPopularFirstLetter()
 

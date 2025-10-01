@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func login(c *fiber.Ctx) error {
+func Login(c *fiber.Ctx) error {
 	user := c.FormValue("user")
 	pass := c.FormValue("pass")
 
@@ -37,11 +37,11 @@ func login(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"token": t})
 }
 
-func accessible(c *fiber.Ctx) error {
+func Accessible(c *fiber.Ctx) error {
 	return c.SendString("Accessible")
 }
 
-func restricted(c *fiber.Ctx) error {
+func Restricted(c *fiber.Ctx) error {
 	user := c.Locals("user").(*jwt.Token)
 	claims := user.Claims.(jwt.MapClaims)
 	name := claims["name"].(string)
