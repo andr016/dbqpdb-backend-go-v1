@@ -17,3 +17,7 @@ go run . --setup
 ```bash
 go run .
 ```
+Without authn
+```bash
+go run . --noauth
+```
