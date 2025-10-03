@@ -1,4 +1,4 @@
-package models
+package domain
 
 // This also exists
 

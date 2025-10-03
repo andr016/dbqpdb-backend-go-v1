@@ -1,4 +1,4 @@
-package models
+package domain
 
 type Subject struct {
 	ID           int           `json:"subject_id" gorm:"primaryKey;column:subject_id"`
