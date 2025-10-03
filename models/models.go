@@ -1,6 +1,5 @@
 package models
 
-// Subject model
 type Subject struct {
 	ID           int           `json:"subject_id" gorm:"primaryKey;column:subject_id"`
 	Name         string        `json:"subject_name" gorm:"column:name"`
@@ -10,14 +9,12 @@ type Subject struct {
 	GroupID      int           `json:"group_id" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 }
 
-// Typology model
 type Typology struct {
 	TypologyID  int    `json:"typology_id" gorm:"primaryKey;column:typology_id"`
 	Name        string `json:"typology_name" gorm:"column:name"`
 	DisplayName string `json:"typology_display_name" gorm:"column:display_name"`
 }
 
-// Type model
 type Type struct {
 	ID          int    `json:"type_id" gorm:"primaryKey;column:type_id;unique"`
 	TypologyID  int    `json:"typology_id" gorm:"primaryKey;column:typology_id"`
@@ -26,12 +23,10 @@ type Type struct {
 	Description string `json:"type_description" gorm:"column:description"`
 }
 
-// Type For Subject model
 type TypeForSubject struct {
 	ID int `json:"type_id" gorm:"primaryKey;column:type_id"`
 }
 
-// SubjectType model (associative table)
 type SubjectType struct {
 	SubjectID  int      `gorm:"primaryKey;column:subject_id"`
 	TypologyID int      `gorm:"primaryKey;column:typology_id"`
