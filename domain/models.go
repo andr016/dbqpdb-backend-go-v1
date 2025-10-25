@@ -46,3 +46,9 @@ type Group struct {
 	GroupID   int    `json:"group_id" gorm:"primaryKey;column:group_id"`
 	Groupname string `json:"group_name" gorm:"column:group_name;unique"`
 }
+
+type SubjectResponse struct {
+	Subject   string `json:"subject"`
+	SubjectID int    `json:"subject_id"`
+	Types     []int  `json:"types"`
+}
