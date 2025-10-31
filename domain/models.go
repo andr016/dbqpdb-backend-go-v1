@@ -6,7 +6,7 @@ type Subject struct {
 	MBTI         string        `json:"mbti" gorm:"column:mbti"`
 	SubjectTypes []SubjectType `json:"subject_types" gorm:"foreignKey:SubjectID"`
 	ImageURL     string        `json:"image_url" gorm:"column:image_url"`
-	GroupID      int           `json:"group_id" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
+	GroupID      *int          `json:"group_id" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 }
 
 type Typology struct {
